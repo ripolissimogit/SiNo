@@ -1,0 +1,19 @@
+name: SiNo
+options:
+  bundleIdPrefix: com.claudioripoli
+  deploymentTarget:
+    iOS: "17.0"
+targets:
+  SiNo:
+    type: application
+    platform: iOS
+    sources:
+      - SiNo
+    settings:
+      SWIFT_VERSION: "5.9"
+      GENERATE_INFOPLIST_FILE: YES
+      CODE_SIGN_STYLE: Automatic
+      DEVELOPMENT_TEAM: 6T98N5PN3Y
+      INFOPLIST_KEY_UILaunchScreen_Generation: YES
+      INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+      INFOPLIST_KEY_CFBundleDisplayName: "Sì o No"
