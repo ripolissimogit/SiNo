@@ -20,10 +20,38 @@ let builtInPresets: [Preset] = [
            positiveColor: Color(red: 0.3, green: 0.7, blue: 1.0),
            negativeColor: Color(red: 1.0, green: 0.4, blue: 0.2),
            fontSize: 120),
-    Preset(id: "gono", positive: "GO", negative: "NAH",
+    Preset(id: "gostop", positive: "GO", negative: "STOP",
            positiveColor: Color(red: 0.0, green: 0.9, blue: 0.6),
-           negativeColor: Color(red: 0.6, green: 0.3, blue: 0.9),
+           negativeColor: Color(red: 0.9, green: 0.2, blue: 0.1),
            fontSize: 130),
+    Preset(id: "doit", positive: "DO IT", negative: "SKIP",
+           positiveColor: Color(red: 1.0, green: 0.8, blue: 0.0),
+           negativeColor: Color(red: 0.5, green: 0.5, blue: 0.55),
+           fontSize: 100),
+    Preset(id: "yolo", positive: "YOLO", negative: "NOPE",
+           positiveColor: Color(red: 1.0, green: 0.3, blue: 0.6),
+           negativeColor: Color(red: 0.4, green: 0.4, blue: 0.9),
+           fontSize: 110),
+    Preset(id: "bet", positive: "BET", negative: "PASS",
+           positiveColor: Color(red: 1.0, green: 0.6, blue: 0.0),
+           negativeColor: Color(red: 0.6, green: 0.3, blue: 0.9),
+           fontSize: 120),
+    Preset(id: "wl", positive: "W", negative: "L",
+           positiveColor: Color(red: 0.0, green: 1.0, blue: 0.5),
+           negativeColor: Color(red: 1.0, green: 0.2, blue: 0.2),
+           fontSize: 160),
+    Preset(id: "sendit", positive: "SEND IT", negative: "BAIL",
+           positiveColor: Color(red: 1.0, green: 0.5, blue: 0.0),
+           negativeColor: Color(red: 0.4, green: 0.4, blue: 0.5),
+           fontSize: 90),
+    Preset(id: "sayless", positive: "SAY LESS", negative: "I'M OUT",
+           positiveColor: Color(red: 0.3, green: 0.9, blue: 0.7),
+           negativeColor: Color(red: 0.8, green: 0.2, blue: 0.4),
+           fontSize: 75),
+    Preset(id: "lesgo", positive: "LESGO", negative: "BRUH",
+           positiveColor: Color(red: 0.9, green: 0.9, blue: 0.0),
+           negativeColor: Color(red: 0.5, green: 0.3, blue: 0.7),
+           fontSize: 100),
     Preset(id: "daimai", positive: "DAI", negative: "MAI",
            positiveColor: Color(red: 1.0, green: 0.8, blue: 0.0),
            negativeColor: Color(red: 0.5, green: 0.5, blue: 0.55),
@@ -42,8 +70,21 @@ enum SwipeAxis {
 struct ContentView: View {
     @AppStorage("hasSeenCoachMark") private var hasSeenCoachMark = false
     @AppStorage("selectedPreset") private var selectedPresetId = "sino"
+    @AppStorage("useCards") private var useCards = false
+    @AppStorage("useAsk") private var useAsk = false
     @AppStorage("customPositive") private var customPositive = ""
     @AppStorage("customNegative") private var customNegative = ""
+
+    // Ask mode
+    @State private var question = ""
+    @State private var aiPositive = ""
+    @State private var aiNegative = ""
+    @State private var isLoadingAI = false
+    @State private var aiReady = false
+    @State private var showAPIKeySheet = false
+    @State private var apiKeyInput = ""
+
+    private let keychainService = "com.claudioripoli.SiNo.apiKey"
 
     // Stats
     @AppStorage("totalSpins") private var totalSpins = 0
@@ -88,6 +129,16 @@ struct ContentView: View {
     private let heavyHaptic = UIImpactFeedbackGenerator(style: .heavy)
 
     var preset: Preset {
+        if useAsk && aiReady {
+            let maxLen = max(aiPositive.count, aiNegative.count)
+            let size: CGFloat = maxLen <= 2 ? 140 : maxLen <= 4 ? 110 : maxLen <= 6 ? 85 : maxLen <= 8 ? 65 : 50
+            return Preset(id: "ask",
+                          positive: aiPositive,
+                          negative: aiNegative,
+                          positiveColor: Color(red: 0.2, green: 0.8, blue: 0.4),
+                          negativeColor: Color(red: 0.9, green: 0.25, blue: 0.3),
+                          fontSize: size)
+        }
         if selectedPresetId == "custom" && !customPositive.isEmpty && !customNegative.isEmpty {
             let maxLen = max(customPositive.count, customNegative.count)
             let size: CGFloat = maxLen <= 2 ? 140 : maxLen <= 4 ? 110 : maxLen <= 6 ? 85 : 65
@@ -126,18 +177,39 @@ struct ContentView: View {
             .ignoresSafeArea()
 
             ZStack {
-                if showingPositive {
-                    Text(preset.positive)
-                        .font(.system(size: preset.fontSize, weight: .black, design: .rounded))
-                        .foregroundColor(preset.positiveColor)
-                        .shadow(color: preset.positiveColor.opacity(showResult ? 0.8 : 0.4), radius: showResult ? glowRadius : 10)
+                if useAsk && !aiReady {
+                    // Question mark placeholder
+                    Text("?")
+                        .font(.system(size: 200, weight: .black, design: .rounded))
+                        .foregroundColor(.white.opacity(isLoadingAI ? 0.15 : 0.25))
+                } else if useCards {
+                    // Card mode
+                    if showingPositive {
+                        Image("card_positive")
+                            .resizable()
+                            .scaledToFit()
+                    } else {
+                        Image("card_negative")
+                            .resizable()
+                            .scaledToFit()
+                            .scaleEffect(x: currentAxis == .horizontal ? -1 : 1,
+                                         y: currentAxis == .vertical ? -1 : 1)
+                    }
                 } else {
-                    Text(preset.negative)
-                        .font(.system(size: preset.fontSize, weight: .black, design: .rounded))
-                        .foregroundColor(preset.negativeColor)
-                        .scaleEffect(x: currentAxis == .horizontal ? -1 : 1,
-                                     y: currentAxis == .vertical ? -1 : 1)
-                        .shadow(color: preset.negativeColor.opacity(showResult ? 0.8 : 0.4), radius: showResult ? glowRadius : 10)
+                    // Text mode
+                    if showingPositive {
+                        Text(preset.positive)
+                            .font(.system(size: preset.fontSize, weight: .black, design: .rounded))
+                            .foregroundColor(preset.positiveColor)
+                            .shadow(color: preset.positiveColor.opacity(showResult ? 0.8 : 0.4), radius: showResult ? glowRadius : 10)
+                    } else {
+                        Text(preset.negative)
+                            .font(.system(size: preset.fontSize, weight: .black, design: .rounded))
+                            .foregroundColor(preset.negativeColor)
+                            .scaleEffect(x: currentAxis == .horizontal ? -1 : 1,
+                                         y: currentAxis == .vertical ? -1 : 1)
+                            .shadow(color: preset.negativeColor.opacity(showResult ? 0.8 : 0.4), radius: showResult ? glowRadius : 10)
+                    }
                 }
             }
             .rotation3DEffect(.degrees(angle), axis: rotationAxis, perspective: 0.3)
@@ -162,6 +234,30 @@ struct ContentView: View {
                         }
 
                         Divider()
+
+                        Button {
+                            useCards.toggle()
+                            useAsk = false
+                            resetState()
+                        } label: {
+                            HStack {
+                                Text(useCards ? "Testo" : "Carte")
+                                Image(systemName: useCards ? "textformat" : "rectangle.portrait.on.rectangle.portrait")
+                            }
+                        }
+
+                        Button {
+                            useAsk.toggle()
+                            useCards = false
+                            aiReady = false
+                            question = ""
+                            resetState()
+                        } label: {
+                            HStack {
+                                Text(useAsk ? "Preset" : "Chiedi")
+                                Image(systemName: useAsk ? "text.justify" : "questionmark.bubble")
+                            }
+                        }
 
                         Button {
                             editPositive = customPositive
@@ -189,6 +285,41 @@ struct ContentView: View {
                 .padding(.trailing, 12)
                 .padding(.top, 8)
                 Spacer()
+            }
+
+            // Ask mode input
+            if useAsk {
+                VStack {
+                    Spacer()
+                    HStack(spacing: 8) {
+                        TextField("Fai una domanda...", text: $question)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 16, design: .rounded))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .background(
+                                Capsule().fill(.white.opacity(0.1))
+                            )
+                            .submitLabel(.go)
+                            .onSubmit { askAI() }
+
+                        if isLoadingAI {
+                            ProgressView()
+                                .tint(.white)
+                                .frame(width: 44, height: 44)
+                        } else {
+                            Button { askAI() } label: {
+                                Image(systemName: "arrow.up.circle.fill")
+                                    .font(.system(size: 32))
+                                    .foregroundColor(question.isEmpty ? .white.opacity(0.2) : .white.opacity(0.8))
+                            }
+                            .disabled(question.isEmpty || isLoadingAI)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 40)
+                }
             }
 
             // Coach mark
@@ -298,6 +429,51 @@ struct ContentView: View {
             .presentationDetents([.height(380)])
             .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: $showAPIKeySheet) {
+            VStack(spacing: 20) {
+                Text("API Key")
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .padding(.top, 20)
+                Text("Inserisci la tua Anthropic API key")
+                    .font(.system(size: 14, design: .rounded))
+                    .foregroundColor(.secondary)
+                SecureField("sk-ant-...", text: $apiKeyInput)
+                    .textFieldStyle(.roundedBorder)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .padding(.horizontal, 24)
+                Button {
+                    saveAPIKey(service: keychainService, value: apiKeyInput)
+                    showAPIKeySheet = false
+                    askAI()
+                } label: {
+                    Text("Salva")
+                        .font(.system(size: 17, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background(Capsule().fill(apiKeyInput.isEmpty ? .gray : .blue))
+                }
+                .disabled(apiKeyInput.isEmpty)
+                .padding(.horizontal, 24)
+                Spacer()
+            }
+            .presentationDetents([.height(250)])
+            .presentationDragIndicator(.visible)
+        }
+    }
+
+    func autoSpin() {
+        guard !isSpinning else { return }
+        velocity = Double.random(in: 1200...2000)
+        if Bool.random() { velocity = -velocity }
+        haptic.prepare()
+        heavyHaptic.prepare()
+        lastFace = showingPositive
+        spinFlipCount = 0
+        isSpinning = true
+        currentAxis = .horizontal
+        startDisplayLink()
     }
 
     func resetState() {
@@ -305,6 +481,43 @@ struct ContentView: View {
         showResult = false
         bgFlash = 0
         glowRadius = 0
+    }
+
+    func askAI() {
+        guard !question.isEmpty, !isLoadingAI else { return }
+
+        guard let key = loadAPIKey(service: keychainService), !key.isEmpty else {
+            showAPIKeySheet = true
+            return
+        }
+
+        isLoadingAI = true
+        aiReady = false
+
+        let q = question
+        Task {
+            do {
+                let provider = ClaudeProvider(apiKey: key)
+                let response = try await provider.generateResponses(for: q)
+                await MainActor.run {
+                    aiPositive = response.positive
+                    aiNegative = response.negative
+                    aiReady = true
+                    isLoadingAI = false
+                    angle = 0
+                    showResult = false
+                    autoSpin()
+                }
+            } catch {
+                await MainActor.run {
+                    isLoadingAI = false
+                    aiPositive = "SÌ"
+                    aiNegative = "NO"
+                    aiReady = true
+                    autoSpin()
+                }
+            }
+        }
     }
 
     func recordResult(positive: Bool) {
