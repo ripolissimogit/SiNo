@@ -9,6 +9,7 @@ struct Preset: Identifiable, Equatable {
     let negativeColor: Color
     let fontSize: CGFloat
     var isCustom: Bool = false
+    var isCards: Bool = false
 }
 
 let builtInPresets: [Preset] = [
@@ -60,6 +61,10 @@ let builtInPresets: [Preset] = [
            positiveColor: Color(red: 0.2, green: 0.8, blue: 0.4),
            negativeColor: Color(red: 0.9, green: 0.1, blue: 0.1),
            fontSize: 100),
+    Preset(id: "cards", positive: "SÌ", negative: "NO",
+           positiveColor: Color(red: 0.2, green: 0.8, blue: 0.4),
+           negativeColor: Color(red: 0.9, green: 0.25, blue: 0.3),
+           fontSize: 140, isCards: true),
 ]
 
 enum SwipeAxis {
@@ -70,27 +75,8 @@ enum SwipeAxis {
 struct ContentView: View {
     @AppStorage("hasSeenCoachMark") private var hasSeenCoachMark = false
     @AppStorage("selectedPreset") private var selectedPresetId = "sino"
-    @AppStorage("useCards") private var useCards = false
-    @AppStorage("useAsk") private var useAsk = false
     @AppStorage("customPositive") private var customPositive = ""
     @AppStorage("customNegative") private var customNegative = ""
-
-    // Ask mode
-    @State private var question = ""
-    @State private var aiPositive = ""
-    @State private var aiNegative = ""
-    @State private var isLoadingAI = false
-    @State private var aiReady = false
-    @State private var showAPIKeySheet = false
-    @State private var apiKeyInput = ""
-
-    private let keychainService = "com.claudioripoli.SiNo.apiKey"
-
-    // Stats
-    @AppStorage("totalSpins") private var totalSpins = 0
-    @AppStorage("positiveCount") private var positiveCount = 0
-    @AppStorage("negativeCount") private var negativeCount = 0
-    @AppStorage("totalFlips") private var totalFlips = 0
 
     @State private var angle: Double = 0
     @State private var velocity: Double = 0
@@ -104,7 +90,6 @@ struct ContentView: View {
 
     @State private var showResult = false
     @State private var resultIsPositive = true
-    @State private var spinFlipCount = 0
     @State private var textScale: CGFloat = 1.0
     @State private var glowRadius: CGFloat = 0
     @State private var bgFlash: Double = 0
@@ -112,9 +97,11 @@ struct ContentView: View {
     @State private var showCoachMark = false
     @State private var handOffset: CGFloat = -60
     @State private var handOpacity: Double = 0
+    @State private var showTagline = true
+    @State private var taglineOpacity: Double = 0
 
+    @State private var showSettings = false
     @State private var showCustomSheet = false
-    @State private var showStatsSheet = false
     @State private var editPositive = ""
     @State private var editNegative = ""
 
@@ -128,17 +115,8 @@ struct ContentView: View {
     private let haptic = UIImpactFeedbackGenerator(style: .light)
     private let heavyHaptic = UIImpactFeedbackGenerator(style: .heavy)
 
+
     var preset: Preset {
-        if useAsk && aiReady {
-            let maxLen = max(aiPositive.count, aiNegative.count)
-            let size: CGFloat = maxLen <= 2 ? 140 : maxLen <= 4 ? 110 : maxLen <= 6 ? 85 : maxLen <= 8 ? 65 : 50
-            return Preset(id: "ask",
-                          positive: aiPositive,
-                          negative: aiNegative,
-                          positiveColor: Color(red: 0.2, green: 0.8, blue: 0.4),
-                          negativeColor: Color(red: 0.9, green: 0.25, blue: 0.3),
-                          fontSize: size)
-        }
         if selectedPresetId == "custom" && !customPositive.isEmpty && !customNegative.isEmpty {
             let maxLen = max(customPositive.count, customNegative.count)
             let size: CGFloat = maxLen <= 2 ? 140 : maxLen <= 4 ? 110 : maxLen <= 6 ? 85 : 65
@@ -177,13 +155,7 @@ struct ContentView: View {
             .ignoresSafeArea()
 
             ZStack {
-                if useAsk && !aiReady {
-                    // Question mark placeholder
-                    Text("?")
-                        .font(.system(size: 200, weight: .black, design: .rounded))
-                        .foregroundColor(.white.opacity(isLoadingAI ? 0.15 : 0.25))
-                } else if useCards {
-                    // Card mode
+                if preset.isCards {
                     if showingPositive {
                         Image("card_positive")
                             .resizable()
@@ -196,7 +168,6 @@ struct ContentView: View {
                                          y: currentAxis == .vertical ? -1 : 1)
                     }
                 } else {
-                    // Text mode
                     if showingPositive {
                         Text(preset.positive)
                             .font(.system(size: preset.fontSize, weight: .black, design: .rounded))
@@ -216,69 +187,18 @@ struct ContentView: View {
             .scaleEffect(textScale)
 
 
-            // Menu overlay
+            // Settings button
             VStack {
                 HStack {
                     Spacer()
-                    Menu {
-                        ForEach(builtInPresets) { p in
-                            Button {
-                                selectedPresetId = p.id
-                                resetState()
-                            } label: {
-                                HStack {
-                                    Text("\(p.positive) / \(p.negative)")
-                                    if p.id == selectedPresetId { Image(systemName: "checkmark") }
-                                }
-                            }
-                        }
-
-                        Divider()
-
-                        Button {
-                            useCards.toggle()
-                            useAsk = false
-                            resetState()
-                        } label: {
-                            HStack {
-                                Text(useCards ? "Testo" : "Carte")
-                                Image(systemName: useCards ? "textformat" : "rectangle.portrait.on.rectangle.portrait")
-                            }
-                        }
-
-                        Button {
-                            useAsk.toggle()
-                            useCards = false
-                            aiReady = false
-                            question = ""
-                            resetState()
-                        } label: {
-                            HStack {
-                                Text(useAsk ? "Preset" : "Chiedi")
-                                Image(systemName: useAsk ? "text.justify" : "questionmark.bubble")
-                            }
-                        }
-
-                        Button {
-                            editPositive = customPositive
-                            editNegative = customNegative
-                            showCustomSheet = true
-                        } label: {
-                            HStack {
-                                Text("Personalizza...")
-                                if selectedPresetId == "custom" { Image(systemName: "checkmark") }
-                            }
-                        }
-
-                        Divider()
-
-                        Button { showStatsSheet = true } label: {
-                            Label("Statistiche", systemImage: "chart.bar")
+                    Button {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                            showSettings.toggle()
                         }
                     } label: {
-                        Image(systemName: "ellipsis.circle")
+                        Image(systemName: showSettings ? "xmark.circle.fill" : "ellipsis.circle")
                             .font(.system(size: 22))
-                            .foregroundColor(.white.opacity(0.3))
+                            .foregroundColor(.white.opacity(showSettings ? 0.6 : 0.3))
                             .frame(width: 44, height: 44)
                     }
                 }
@@ -286,40 +206,146 @@ struct ContentView: View {
                 .padding(.top, 8)
                 Spacer()
             }
+            .zIndex(2)
 
-            // Ask mode input
-            if useAsk {
-                VStack {
-                    Spacer()
-                    HStack(spacing: 8) {
-                        TextField("Fai una domanda...", text: $question)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 16, design: .rounded))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
-                            .background(
-                                Capsule().fill(.white.opacity(0.1))
-                            )
-                            .submitLabel(.go)
-                            .onSubmit { askAI() }
-
-                        if isLoadingAI {
-                            ProgressView()
-                                .tint(.white)
-                                .frame(width: 44, height: 44)
-                        } else {
-                            Button { askAI() } label: {
-                                Image(systemName: "arrow.up.circle.fill")
-                                    .font(.system(size: 32))
-                                    .foregroundColor(question.isEmpty ? .white.opacity(0.2) : .white.opacity(0.8))
-                            }
-                            .disabled(question.isEmpty || isLoadingAI)
+            // Settings panel
+            if showSettings {
+                Color.black.opacity(0.4)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                            showSettings = false
                         }
                     }
+                    .zIndex(3)
+
+                VStack(spacing: 0) {
+                    Spacer().frame(height: 60)
+
+                    VStack(spacing: 16) {
+                        // Preset grid
+                        LazyVGrid(columns: [
+                            GridItem(.flexible(), spacing: 10),
+                            GridItem(.flexible(), spacing: 10)
+                        ], spacing: 10) {
+                            ForEach(builtInPresets) { p in
+                                let isSelected = p.id == selectedPresetId
+                                Button {
+                                    selectedPresetId = p.id
+                                    resetState()
+                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                                        showSettings = false
+                                    }
+                                } label: {
+                                    if p.isCards {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: "rectangle.portrait.on.rectangle.portrait.fill")
+                                                .font(.system(size: 14))
+                                                .foregroundColor(.white.opacity(0.7))
+                                            Text("Carte")
+                                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                                .foregroundColor(.white.opacity(0.9))
+                                        }
+                                        .frame(maxWidth: .infinity)
+                                        .frame(height: 48)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 14)
+                                                .fill(isSelected
+                                                      ? .white.opacity(0.2)
+                                                      : .white.opacity(0.07))
+                                        )
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 14)
+                                                .stroke(isSelected ? .white.opacity(0.3) : .clear, lineWidth: 1)
+                                        )
+                                    } else {
+                                        HStack(spacing: 4) {
+                                            Text(p.positive)
+                                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                                                .foregroundColor(p.positiveColor)
+                                            Text("/")
+                                                .font(.system(size: 13, weight: .medium, design: .rounded))
+                                                .foregroundColor(.white.opacity(0.3))
+                                            Text(p.negative)
+                                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                                                .foregroundColor(p.negativeColor)
+                                        }
+                                        .frame(maxWidth: .infinity)
+                                        .frame(height: 48)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 14)
+                                                .fill(isSelected
+                                                      ? .white.opacity(0.2)
+                                                      : .white.opacity(0.07))
+                                        )
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 14)
+                                                .stroke(isSelected ? .white.opacity(0.3) : .clear, lineWidth: 1)
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Custom button
+                            Button {
+                                editPositive = customPositive
+                                editNegative = customNegative
+                                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                                    showSettings = false
+                                }
+                                showCustomSheet = true
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "pencil")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(.white.opacity(0.7))
+                                    Text("Tuo")
+                                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                        .foregroundColor(.white.opacity(0.9))
+                                }
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 48)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 14)
+                                        .fill(selectedPresetId == "custom"
+                                              ? .white.opacity(0.2)
+                                              : .white.opacity(0.07))
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 14)
+                                        .stroke(selectedPresetId == "custom" ? .white.opacity(0.3) : .clear, lineWidth: 1)
+                                )
+                            }
+                        }
+                    }
+                    .padding(20)
+                    .background(
+                        RoundedRectangle(cornerRadius: 24)
+                            .fill(.ultraThinMaterial)
+                            .environment(\.colorScheme, .dark)
+                    )
                     .padding(.horizontal, 16)
-                    .padding(.bottom, 40)
+
+                    Spacer()
                 }
+                .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
+                .zIndex(4)
+            }
+
+
+            // Tagline
+            if showTagline {
+                VStack {
+                    Spacer()
+                    Text("I'll decide for you.\nJust swipe.")
+                        .font(.system(size: 17, weight: .medium, design: .rounded))
+                        .foregroundColor(.white.opacity(0.35))
+                        .multilineTextAlignment(.center)
+                        .lineSpacing(4)
+                        .opacity(taglineOpacity)
+                        .padding(.bottom, 80)
+                }
+                .allowsHitTesting(false)
             }
 
             // Coach mark
@@ -341,6 +367,7 @@ struct ContentView: View {
                 showCoachMark = true
                 startCoachMarkAnimation()
             }
+            withAnimation(.easeIn(duration: 1.0).delay(0.3)) { taglineOpacity = 1 }
         }
         .gesture(
             DragGesture(minimumDistance: 10)
@@ -355,6 +382,7 @@ struct ContentView: View {
                         glowRadius = 0
                         textScale = 1.0
                         dismissCoachMark()
+                        dismissTagline()
 
                         let dx = abs(value.translation.width)
                         let dy = abs(value.translation.height)
@@ -378,16 +406,11 @@ struct ContentView: View {
 
                     if abs(gestureVelocity) < minSpinVelocity {
                         snapToNearestFace()
-                        // Record even slow snaps
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            recordResult(positive: showingPositive)
-                        }
                     } else {
                         velocity = gestureVelocity
                         haptic.prepare()
                         heavyHaptic.prepare()
                         lastFace = showingPositive
-                        spinFlipCount = 0
                         isSpinning = true
                         startDisplayLink()
                     }
@@ -409,71 +432,6 @@ struct ContentView: View {
             .presentationDetents([.height(250)])
             .presentationDragIndicator(.visible)
         }
-        .sheet(isPresented: $showStatsSheet) {
-            StatsSheet(
-                totalSpins: totalSpins,
-                positiveCount: positiveCount,
-                negativeCount: negativeCount,
-                totalFlips: totalFlips,
-                positiveColor: preset.positiveColor,
-                negativeColor: preset.negativeColor,
-                positiveLabel: preset.positive,
-                negativeLabel: preset.negative,
-                onReset: {
-                    totalSpins = 0
-                    positiveCount = 0
-                    negativeCount = 0
-                    totalFlips = 0
-                }
-            )
-            .presentationDetents([.height(380)])
-            .presentationDragIndicator(.visible)
-        }
-        .sheet(isPresented: $showAPIKeySheet) {
-            VStack(spacing: 20) {
-                Text("API Key")
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
-                    .padding(.top, 20)
-                Text("Inserisci la tua Anthropic API key")
-                    .font(.system(size: 14, design: .rounded))
-                    .foregroundColor(.secondary)
-                SecureField("sk-ant-...", text: $apiKeyInput)
-                    .textFieldStyle(.roundedBorder)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
-                    .padding(.horizontal, 24)
-                Button {
-                    saveAPIKey(service: keychainService, value: apiKeyInput)
-                    showAPIKeySheet = false
-                    askAI()
-                } label: {
-                    Text("Salva")
-                        .font(.system(size: 17, weight: .semibold, design: .rounded))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 48)
-                        .background(Capsule().fill(apiKeyInput.isEmpty ? .gray : .blue))
-                }
-                .disabled(apiKeyInput.isEmpty)
-                .padding(.horizontal, 24)
-                Spacer()
-            }
-            .presentationDetents([.height(250)])
-            .presentationDragIndicator(.visible)
-        }
-    }
-
-    func autoSpin() {
-        guard !isSpinning else { return }
-        velocity = Double.random(in: 1200...2000)
-        if Bool.random() { velocity = -velocity }
-        haptic.prepare()
-        heavyHaptic.prepare()
-        lastFace = showingPositive
-        spinFlipCount = 0
-        isSpinning = true
-        currentAxis = .horizontal
-        startDisplayLink()
     }
 
     func resetState() {
@@ -481,50 +439,6 @@ struct ContentView: View {
         showResult = false
         bgFlash = 0
         glowRadius = 0
-    }
-
-    func askAI() {
-        guard !question.isEmpty, !isLoadingAI else { return }
-
-        guard let key = loadAPIKey(service: keychainService), !key.isEmpty else {
-            showAPIKeySheet = true
-            return
-        }
-
-        isLoadingAI = true
-        aiReady = false
-
-        let q = question
-        Task {
-            do {
-                let provider = ClaudeProvider(apiKey: key)
-                let response = try await provider.generateResponses(for: q)
-                await MainActor.run {
-                    aiPositive = response.positive
-                    aiNegative = response.negative
-                    aiReady = true
-                    isLoadingAI = false
-                    angle = 0
-                    showResult = false
-                    autoSpin()
-                }
-            } catch {
-                await MainActor.run {
-                    isLoadingAI = false
-                    aiPositive = "SÌ"
-                    aiNegative = "NO"
-                    aiReady = true
-                    autoSpin()
-                }
-            }
-        }
-    }
-
-    func recordResult(positive: Bool) {
-        totalSpins += 1
-        totalFlips += spinFlipCount
-        if positive { positiveCount += 1 }
-        else { negativeCount += 1 }
     }
 
     // MARK: - Coach mark
@@ -549,6 +463,12 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    func dismissTagline() {
+        guard showTagline else { return }
+        withAnimation(.easeOut(duration: 0.3)) { taglineOpacity = 0 }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { showTagline = false }
     }
 
     func dismissCoachMark() {
@@ -589,7 +509,6 @@ struct ContentView: View {
     func revealResult() {
         resultIsPositive = showingPositive
         showResult = true
-        recordResult(positive: showingPositive)
 
         withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) { textScale = 1.2 }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -623,7 +542,6 @@ struct ContentView: View {
         let currentFace = showingPositive
         if currentFace != lastFace {
             lastFace = currentFace
-            spinFlipCount += 1
             if speed > 100 { haptic.impactOccurred(intensity: min(speed / 800, 1.0)) }
         }
 
@@ -643,126 +561,6 @@ struct ContentView: View {
             withAnimation(.spring(response: 0.6, dampingFraction: 0.6)) { angle = targetAngle }
 
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { revealResult() }
-        }
-    }
-}
-
-// MARK: - Stats Sheet
-
-struct StatsSheet: View {
-    let totalSpins: Int
-    let positiveCount: Int
-    let negativeCount: Int
-    let totalFlips: Int
-    let positiveColor: Color
-    let negativeColor: Color
-    let positiveLabel: String
-    let negativeLabel: String
-    let onReset: () -> Void
-
-    private var positiveRatio: CGFloat {
-        guard totalSpins > 0 else { return 0.5 }
-        return CGFloat(positiveCount) / CGFloat(totalSpins)
-    }
-
-    private var negativeRatio: CGFloat {
-        guard totalSpins > 0 else { return 0.5 }
-        return CGFloat(negativeCount) / CGFloat(totalSpins)
-    }
-
-    private var avgFlips: Double {
-        guard totalSpins > 0 else { return 0 }
-        return Double(totalFlips) / Double(totalSpins)
-    }
-
-    var body: some View {
-        VStack(spacing: 24) {
-            Text("Statistiche")
-                .font(.system(size: 18, weight: .bold, design: .rounded))
-                .padding(.top, 20)
-
-            // Numbers row
-            HStack(spacing: 32) {
-                VStack(spacing: 4) {
-                    Text("\(totalSpins)")
-                        .font(.system(size: 36, weight: .black, design: .rounded))
-                    Text("spin")
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundColor(.secondary)
-                }
-
-                VStack(spacing: 4) {
-                    Text("\(totalFlips)")
-                        .font(.system(size: 36, weight: .black, design: .rounded))
-                    Text("giri")
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundColor(.secondary)
-                }
-
-                VStack(spacing: 4) {
-                    Text(String(format: "%.1f", avgFlips))
-                        .font(.system(size: 36, weight: .black, design: .rounded))
-                    Text("media")
-                        .font(.system(size: 12, weight: .medium, design: .rounded))
-                        .foregroundColor(.secondary)
-                }
-            }
-
-            if totalSpins > 0 {
-                // Bar
-                VStack(spacing: 12) {
-                    GeometryReader { geo in
-                        HStack(spacing: 2) {
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(positiveColor)
-                                .frame(width: max(geo.size.width * positiveRatio, 4))
-
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(negativeColor)
-                                .frame(width: max(geo.size.width * negativeRatio, 4))
-                        }
-                    }
-                    .frame(height: 32)
-                    .padding(.horizontal, 24)
-
-                    // Labels
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(positiveLabel)
-                                .font(.system(size: 15, weight: .bold, design: .rounded))
-                                .foregroundColor(positiveColor)
-                            Text("\(positiveCount) (\(Int(positiveRatio * 100))%)")
-                                .font(.system(size: 13, design: .rounded))
-                                .foregroundColor(.secondary)
-                        }
-
-                        Spacer()
-
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text(negativeLabel)
-                                .font(.system(size: 15, weight: .bold, design: .rounded))
-                                .foregroundColor(negativeColor)
-                            Text("\(negativeCount) (\(Int(negativeRatio * 100))%)")
-                                .font(.system(size: 13, design: .rounded))
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    .padding(.horizontal, 24)
-                }
-            }
-
-            Spacer()
-
-            if totalSpins > 0 {
-                Button(role: .destructive) {
-                    onReset()
-                } label: {
-                    Text("Azzera")
-                        .font(.system(size: 14, weight: .medium, design: .rounded))
-                        .foregroundColor(.red.opacity(0.7))
-                }
-                .padding(.bottom, 16)
-            }
         }
     }
 }
