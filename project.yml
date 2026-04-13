@@ -14,6 +14,8 @@ targets:
       GENERATE_INFOPLIST_FILE: YES
       CODE_SIGN_STYLE: Automatic
       DEVELOPMENT_TEAM: 6T98N5PN3Y
+      MARKETING_VERSION: "1.0.0"
+      CURRENT_PROJECT_VERSION: "1"
       INFOPLIST_KEY_UILaunchScreen_Generation: YES
-      INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+      INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
       INFOPLIST_KEY_CFBundleDisplayName: "Sì o No"
